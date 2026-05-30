@@ -81,7 +81,9 @@ export const SUPPORTED_CHAINS: Record<string, ChainConfig> = {
   },
 };
 
-export const CHAIN_KEYS = Object.keys(SUPPORTED_CHAINS) as Array<keyof typeof SUPPORTED_CHAINS>;
+export type ChainKey = keyof typeof SUPPORTED_CHAINS;
+
+export const CHAIN_KEYS = Object.keys(SUPPORTED_CHAINS) as Array<ChainKey>;
 
 export function getChainConfig(chainKey: string): ChainConfig | null {
   return SUPPORTED_CHAINS[chainKey] || null;

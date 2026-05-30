@@ -1,4 +1,5 @@
 import { UniswapCalculator } from "@/components/UniswapCalculator";
+import { Link } from "react-router-dom";
 import { useEffect } from "react";
 
 const Index = () => {
@@ -40,6 +41,14 @@ const Index = () => {
   return (
     <main className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12">
+        <div className="mb-6 flex justify-end">
+          <Link
+            to="/forecast"
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            Multi-Horizon Forecast →
+          </Link>
+        </div>
         <UniswapCalculator />
       </div>
     </main>

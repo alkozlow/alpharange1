@@ -1,7 +1,17 @@
 import { PriceData } from '@/types/uniswap';
 import { apiCache, createCacheKey, CACHE_DURATIONS } from '@/utils/cache';
 
-const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
+// Use the Pro endpoint + key header when VITE_COINGECKO_API_KEY is set, otherwise
+// fall back to the free public endpoint. A key reduces 429 rate-limit errors,
+// which matter more now that v2 fetches up to three pairs.
+const COINGECKO_API_KEY = import.meta.env.VITE_COINGECKO_API_KEY as string | undefined;
+const COINGECKO_API_URL = COINGECKO_API_KEY
+  ? 'https://pro-api.coingecko.com/api/v3'
+  : 'https://api.coingecko.com/api/v3';
+
+function cgHeaders(): HeadersInit {
+  return COINGECKO_API_KEY ? { 'x-cg-pro-api-key': COINGECKO_API_KEY } : {};
+}
 
 export class CoinGeckoService {
   static async getHistoricalPrices(
@@ -22,9 +32,10 @@ export class CoinGeckoService {
       // If quote is USD-based stablecoin, get base token price in USD
       if (quoteTokenId === 'usd-coin' || quoteTokenId === 'tether' || quoteTokenId === 'dai') {
         const response = await fetch(
-          `${COINGECKO_API_URL}/coins/${baseTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`
+          `${COINGECKO_API_URL}/coins/${baseTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`,
+          { headers: cgHeaders() }
         );
-        
+
         if (!response.ok) {
           throw new Error(`CoinGecko API error: ${response.status}`);
         }
@@ -43,8 +54,8 @@ export class CoinGeckoService {
       
       // For non-USD pairs, we need to get both token prices and calculate the ratio
       const [baseResponse, quoteResponse] = await Promise.all([
-        fetch(`${COINGECKO_API_URL}/coins/${baseTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`),
-        fetch(`${COINGECKO_API_URL}/coins/${quoteTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`)
+        fetch(`${COINGECKO_API_URL}/coins/${baseTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`, { headers: cgHeaders() }),
+        fetch(`${COINGECKO_API_URL}/coins/${quoteTokenId}/market_chart?vs_currency=usd&days=${days}&interval=daily`, { headers: cgHeaders() })
       ]);
       
       if (!baseResponse.ok || !quoteResponse.ok) {
@@ -97,7 +108,8 @@ export class CoinGeckoService {
 
     try {
       const response = await fetch(
-        `${COINGECKO_API_URL}/simple/price?ids=${tokenId}&vs_currencies=usd`
+        `${COINGECKO_API_URL}/simple/price?ids=${tokenId}&vs_currencies=usd`,
+        { headers: cgHeaders() }
       );
       
       if (!response.ok) {

@@ -81,12 +81,21 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const last = (a: number[]) => a[a.length - 1];
-    const socialZ = std(sv) > 0 ? clamp((last(sv) - mean(sv)) / std(sv), -3, 3) : 0;
-    const fundingZ = fr.length > 1 && std(fr) > 0 ? clamp((last(fr) - mean(fr)) / std(fr), -3, 3) : 0;
-    const mvrvLast = mv.length ? last(mv) : 1;
-    const sentLast = sent.length ? last(sent) : 0;
-    const rvLast = rv.length ? last(rv) : 0;
+    // Use the median of the last several days as the "current level" rather than a
+    // single boundary point — the final daily bucket at `to` is often partial and
+    // would otherwise produce garbage z-scores. Also suits a slow-moving signal.
+    const recent = (a: number[], k = 7): number => {
+      if (a.length === 0) return 0;
+      const s = a.slice(-k).sort((x, y) => x - y);
+      return s[Math.floor(s.length / 2)];
+    };
+    const socialLevel = recent(sv);
+    const socialZ = std(sv) > 0 ? clamp((socialLevel - mean(sv)) / std(sv), -3, 3) : 0;
+    const fundingLevel = recent(fr);
+    const fundingZ = fr.length > 1 && std(fr) > 0 ? clamp((fundingLevel - mean(fr)) / std(fr), -3, 3) : 0;
+    const mvrvLast = mv.length ? recent(mv) : 1;
+    const sentLast = sent.length ? recent(sent) : 0;
+    const rvLast = rv.length ? recent(rv) : 0;
 
     // Volatility multiplier: social-volume spikes and extreme funding widen ranges.
     const socialComponent = 0.08 * clamp(socialZ, -1.5, 2.5);
@@ -107,13 +116,13 @@ export default async function handler(req: any, res: any) {
       centerBias,
       asOf: to,
       context: {
-        socialVolumeLast: last(sv),
+        socialVolumeLast: socialLevel,
         socialZ,
         socialTrend,
         mvrv: mvrvLast,
         valuation,
         sentimentBalance: sentLast,
-        fundingRate: fr.length ? last(fr) : null,
+        fundingRate: fundingLevel || null,
         fundingZ,
         santimentRealizedVol2w: rvLast,
       },

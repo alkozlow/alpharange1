@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CoinGeckoService } from '@/services/coinGeckoService';
 import { PriceAnalyzer } from '@/utils/calculations';
-import { buildRangeGrid, type RangeGrid, type RangeCell } from '@/utils/rangeGrid';
+import { buildRangeGrid, contextCenterBias, type RangeGrid, type RangeCell } from '@/utils/rangeGrid';
 import { getSantimentContext, type SantimentContext } from '@/services/santimentContextService';
 import { REFERENCE_PAIRS, PAIR_IDS, formatFeeTier, type PairId } from '@/config/pairs';
 import type { TechnicalIndicators } from '@/types/uniswap';
@@ -273,10 +273,15 @@ function SantimentPanel({ ctx }: { ctx: SantimentContext | null }) {
   const c = ctx.context!;
   const fmtPct = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`;
 
-  // Full-effect (3-month) center bias, using the 180-day MVRV + sentiment.
-  const sentimentPart = 0.02 * Math.tanh(c.sentimentBalance / 200);
-  const mvrvPart3m = -0.04 * Math.tanh((c.mvrv180 - 1) / 0.3);
-  const biasFull = Math.max(-0.06, Math.min(0.06, sentimentPart + mvrvPart3m));
+  // Net center bias at the near (2w) and far (3m) ends, via the shared engine.
+  const mod = {
+    volMultiplier: ctx.volMultiplier,
+    mvrv30: ctx.mvrv30,
+    mvrv180: ctx.mvrv180,
+    sentimentBalance: ctx.sentimentBalance,
+  };
+  const biasNear = contextCenterBias(mod, 14) * 100;
+  const biasFar = contextCenterBias(mod, 90) * 100;
 
   return (
     <Card className="p-4">
@@ -294,11 +299,12 @@ function SantimentPanel({ ctx }: { ctx: SantimentContext | null }) {
         <Stat label="Santiment RV (2w)" value={`${(c.santimentRealizedVol2w * 100).toFixed(1)}%`} />
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Applied as a regime modifier: range width up to {fmtPct((ctx.volMultiplier - 1) * 100)} and
-        center bias up to {fmtPct(biasFull * 100)} at the 3-month horizon. MVRV is period-matched
-        (30-day for near-term columns → 180-day for 3-month) and shown as % above/below cost basis.
-        Effect is weighted toward longer horizons because Santiment data lags ~30 days, so the 2-week
-        column is barely affected.
+        MVRV mean-reversion: below cost basis (−%) biases the range <strong>up</strong>, above (+%)
+        biases it <strong>down</strong>. Long-term (180d) sets the direction; short-term (30d)
+        reinforces it and drives the near-term columns — when both agree (both −% or both +%) the
+        tilt is amplified. Net center bias: <strong>{fmtPct(biasNear)}</strong> at 2 weeks →{' '}
+        <strong>{fmtPct(biasFar)}</strong> at 3 months. Range width up to{' '}
+        {fmtPct((ctx.volMultiplier - 1) * 100)} (social volume + funding).
       </p>
     </Card>
   );

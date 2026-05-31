@@ -102,15 +102,48 @@ export interface ContextModifier {
 
 const clampN = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-/** Period-matched center bias (fractional) for a given horizon, before horizon weighting. */
+/**
+ * Gentler horizon weight for the directional (center) bias than for width: a
+ * valuation/MVRV regime persists longer than a volatility spike, so we keep a
+ * meaningful directional tilt even on the near-term columns (floor 0.4 vs 0.15).
+ */
+function centerWeight(days: number): number {
+  return clampN(0.4 + 0.6 * (days / 90), 0.4, 1);
+}
+
+/**
+ * MVRV + sentiment center bias (fractional), before center weighting.
+ *
+ * MVRV mean-reversion: below cost basis (negative %) biases the center UP, above
+ * biases it DOWN. The long-term (180d) MVRV sets the dominant direction; the
+ * short-term (30d) reinforces that direction and dominates the near-term columns.
+ * When both periods agree in sign (both under- or both over-valued) the signal is
+ * amplified — e.g. both negative → stronger up, both positive → stronger crash risk.
+ * When they diverge (long negative, short positive) the near-term columns express a
+ * short-term uptrend riding the long-term undervaluation.
+ */
 function rawCenterBias(ctx: ContextModifier, days: number): number {
-  // Interpolate MVRV from the 30-day metric (short) to the 180-day metric (~3m).
+  const sShort = ctx.mvrv30 - 1; // deviation from cost basis (e.g. +0.016 = +1.6%)
+  const sLong = ctx.mvrv180 - 1;
+  const SCALE = 0.15;
+
+  const longSignedMag = -Math.tanh(sLong / SCALE); // negative long MVRV → +up
+  const shortDir = Math.sign(-sLong) || 0; // short reinforces the long-term direction
+  const shortMag = Math.tanh(Math.abs(sShort) / SCALE);
+  const agree = (sShort < 0 && sLong < 0) || (sShort > 0 && sLong > 0);
+  const amp = agree ? 1.3 : 1.0;
+
+  // Blend short→long across horizons: near-term weights the 30d signal, 3-month the 180d.
   const t = clampN((days - 30) / (180 - 30), 0, 1);
-  const mvrv = ctx.mvrv30 * (1 - t) + ctx.mvrv180 * t;
-  // Mean-reversion: above cost basis (>1) nudges the center down; below nudges up.
-  const mvrvPart = -0.04 * Math.tanh((mvrv - 1.0) / 0.3);
+  const mvrvBias = amp * (0.04 * longSignedMag * t + 0.04 * shortDir * shortMag * (1 - t));
+
   const sentimentPart = 0.02 * Math.tanh(ctx.sentimentBalance / 200);
-  return clampN(sentimentPart + mvrvPart, -0.06, 0.06);
+  return clampN(sentimentPart + mvrvBias, -0.06, 0.06);
+}
+
+/** Final horizon-weighted center bias from external context (e.g. Santiment). */
+export function contextCenterBias(ctx: ContextModifier, days: number): number {
+  return rawCenterBias(ctx, days) * centerWeight(days);
 }
 
 export interface BuildGridOptions {
@@ -150,10 +183,11 @@ export function buildRangeGrid(prices: number[], options: BuildGridOptions = {})
   const SUCCESS_SIMS = 2000;
 
   const cells: RangeCell[][] = HORIZONS.map((horizon) => {
-    // Horizon-weighted context: light at 2w, full at 3m (Santiment lags ~30 days).
-    const w = horizonWeight(horizon.days);
-    const volMult = contextModifier ? 1 + (contextModifier.volMultiplier - 1) * w : 1;
-    const centerBias = contextModifier ? rawCenterBias(contextModifier, horizon.days) * w : 0;
+    // Width (social/funding) is damped hard near-term (volatility spikes go stale fast);
+    // the directional MVRV/sentiment center bias persists longer, so it uses a gentler weight.
+    const wVol = horizonWeight(horizon.days);
+    const volMult = contextModifier ? 1 + (contextModifier.volMultiplier - 1) * wVol : 1;
+    const centerBias = contextModifier ? contextCenterBias(contextModifier, horizon.days) : 0;
 
     const projVol =
       projectedVolatility(currentDailyVol, longRunDailyVol, persistence, horizon.days) * volMult;

@@ -8,6 +8,15 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Forward serverless API routes to the deployed Vercel functions during local
+    // dev (Vite doesn't run /api), so Santiment context works locally too.
+    proxy: {
+      "/api": {
+        target: "https://alkozlow-alpharange1.vercel.app",
+        changeOrigin: true,
+        secure: true,
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

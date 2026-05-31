@@ -2,7 +2,12 @@ export interface SantimentContextDetail {
   socialVolumeLast: number;
   socialZ: number;
   socialTrend: 'elevated' | 'normal' | 'quiet' | string;
-  mvrv: number;
+  /** Period-bound MVRV ratios (coins moved in last 30 / 180 days). */
+  mvrv30: number;
+  mvrv180: number;
+  /** Same MVRVs as signed % deviation from cost basis (ratio − 1). */
+  mvrv30Pct: number;
+  mvrv180Pct: number;
   valuation: 'overvalued' | 'fair' | 'undervalued' | string;
   sentimentBalance: number;
   fundingRate: number | null;
@@ -14,8 +19,11 @@ export interface SantimentContext {
   available: boolean;
   /** Multiplier on projected volatility (range width). */
   volMultiplier: number;
-  /** Fractional shift of the range center. */
-  centerBias: number;
+  /** Period-bound MVRV ratios — grid period-matches these to each horizon. */
+  mvrv30: number;
+  mvrv180: number;
+  /** Raw weighted-sentiment balance (drives a small center tilt). */
+  sentimentBalance: number;
   reason?: string;
   /** Window end the metrics are as-of (PRO tier lags ~30 days). */
   asOf?: string;
@@ -25,7 +33,9 @@ export interface SantimentContext {
 const UNAVAILABLE: SantimentContext = {
   available: false,
   volMultiplier: 1,
-  centerBias: 0,
+  mvrv30: 1,
+  mvrv180: 1,
+  sentimentBalance: 0,
   reason: 'Santiment unavailable',
 };
 

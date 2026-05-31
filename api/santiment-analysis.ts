@@ -68,9 +68,10 @@ export default async function handler(req: any, res: any) {
     const from = 'utc_now-121d';
     const to = 'utc_now-31d';
 
-    const [sv, mv, fr, sent, rv] = await Promise.all([
+    const [sv, mv30, mv180, fr, sent, rv] = await Promise.all([
       fetchSeries(apiKey, 'social_volume_total', slug, from, to),
-      fetchSeries(apiKey, 'mvrv_usd', slug, from, to),
+      fetchSeries(apiKey, 'mvrv_usd_30d', slug, from, to),
+      fetchSeries(apiKey, 'mvrv_usd_180d', slug, from, to),
       fetchSeries(apiKey, 'funding_rate', slug, from, to),
       fetchSeries(apiKey, 'sentiment_balance_total', slug, from, to),
       fetchSeries(apiKey, 'price_volatility_2w', slug, from, to),
@@ -93,33 +94,37 @@ export default async function handler(req: any, res: any) {
     const socialZ = std(sv) > 0 ? clamp((socialLevel - mean(sv)) / std(sv), -3, 3) : 0;
     const fundingLevel = recent(fr);
     const fundingZ = fr.length > 1 && std(fr) > 0 ? clamp((fundingLevel - mean(fr)) / std(fr), -3, 3) : 0;
-    const mvrvLast = mv.length ? recent(mv) : 1;
+    // Period-bound MVRV ratios (coins moved in the last 30 / 180 days). Centered at
+    // 1.0 (= cost basis). The grid period-matches these to each horizon column.
+    const mvrv30 = mv30.length ? recent(mv30) : 1;
+    const mvrv180 = mv180.length ? recent(mv180) : 1;
     const sentLast = sent.length ? recent(sent) : 0;
     const rvLast = rv.length ? recent(rv) : 0;
 
-    // Volatility multiplier: social-volume spikes and extreme funding widen ranges.
+    // Volatility multiplier (range width): social-volume spikes and extreme funding widen.
     const socialComponent = 0.08 * clamp(socialZ, -1.5, 2.5);
     const fundingComponent = clamp(0.04 * Math.abs(fundingZ), 0, 0.1);
     const volMultiplier = clamp(1 + socialComponent + fundingComponent, 0.85, 1.4);
 
-    // Center bias: weighted sentiment tilt + MVRV mean-reversion (overvalued → down).
-    const sentimentPart = 0.02 * Math.tanh(sentLast / 200);
-    const mvrvPart = -0.04 * Math.tanh((mvrvLast - 1.2) / 1.0);
-    const centerBias = clamp(sentimentPart + mvrvPart, -0.06, 0.06);
-
     const socialTrend = socialZ > 1 ? 'elevated' : socialZ < -1 ? 'quiet' : 'normal';
-    const valuation = mvrvLast > 2 ? 'overvalued' : mvrvLast < 1 ? 'undervalued' : 'fair';
+    const valuation = mvrv30 > 1.05 ? 'overvalued' : mvrv30 < 0.95 ? 'undervalued' : 'fair';
 
     res.status(200).json({
       available: true,
       volMultiplier,
-      centerBias,
+      // Raw center-bias ingredients — grid period-matches MVRV per horizon.
+      mvrv30,
+      mvrv180,
+      sentimentBalance: sentLast,
       asOf: to,
       context: {
         socialVolumeLast: socialLevel,
         socialZ,
         socialTrend,
-        mvrv: mvrvLast,
+        mvrv30,
+        mvrv180,
+        mvrv30Pct: (mvrv30 - 1) * 100,
+        mvrv180Pct: (mvrv180 - 1) * 100,
         valuation,
         sentimentBalance: sentLast,
         fundingRate: fundingLevel || null,

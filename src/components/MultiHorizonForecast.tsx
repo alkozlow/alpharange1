@@ -72,7 +72,12 @@ export function MultiHorizonForecast() {
       const g = buildRangeGrid(prices, {
         technicalIndicators: ti,
         contextModifier: ctx?.available
-          ? { volMultiplier: ctx.volMultiplier, centerBias: ctx.centerBias }
+          ? {
+              volMultiplier: ctx.volMultiplier,
+              mvrv30: ctx.mvrv30,
+              mvrv180: ctx.mvrv180,
+              sentimentBalance: ctx.sentimentBalance,
+            }
           : undefined,
       });
       setIndicators(ti);
@@ -266,8 +271,12 @@ function SantimentPanel({ ctx }: { ctx: SantimentContext | null }) {
   }
 
   const c = ctx.context!;
-  const volPct = ((ctx.volMultiplier - 1) * 100).toFixed(1);
-  const biasPct = (ctx.centerBias * 100).toFixed(1);
+  const fmtPct = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`;
+
+  // Full-effect (3-month) center bias, using the 180-day MVRV + sentiment.
+  const sentimentPart = 0.02 * Math.tanh(c.sentimentBalance / 200);
+  const mvrvPart3m = -0.04 * Math.tanh((c.mvrv180 - 1) / 0.3);
+  const biasFull = Math.max(-0.06, Math.min(0.06, sentimentPart + mvrvPart3m));
 
   return (
     <Card className="p-4">
@@ -277,17 +286,19 @@ function SantimentPanel({ ctx }: { ctx: SantimentContext | null }) {
         <Badge variant="secondary">valuation: {c.valuation}</Badge>
         <span className="text-xs text-muted-foreground">as of {ctx.asOf}</span>
       </div>
-      <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
         <Stat label="Social vol (z)" value={c.socialZ.toFixed(2)} />
-        <Stat label="MVRV" value={c.mvrv.toFixed(2)} />
+        <Stat label="MVRV 30d" value={fmtPct(c.mvrv30Pct)} />
+        <Stat label="MVRV 180d" value={fmtPct(c.mvrv180Pct)} />
         <Stat label="Sentiment bal." value={c.sentimentBalance.toFixed(0)} />
         <Stat label="Santiment RV (2w)" value={`${(c.santimentRealizedVol2w * 100).toFixed(1)}%`} />
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Applied as a regime modifier: range width {Number(volPct) >= 0 ? '+' : ''}{volPct}%, center
-        bias {Number(biasPct) >= 0 ? '+' : ''}{biasPct}% — weighted toward longer horizons (Santiment
-        data lags ~30 days, so the 2-week column is barely affected and the 3-month column gets the
-        full effect).
+        Applied as a regime modifier: range width up to {fmtPct((ctx.volMultiplier - 1) * 100)} and
+        center bias up to {fmtPct(biasFull * 100)} at the 3-month horizon. MVRV is period-matched
+        (30-day for near-term columns → 180-day for 3-month) and shown as % above/below cost basis.
+        Effect is weighted toward longer horizons because Santiment data lags ~30 days, so the 2-week
+        column is barely affected.
       </p>
     </Card>
   );

@@ -87,13 +87,30 @@ function projectedVolatility(
 /**
  * External regime context (e.g. Santiment). Because Santiment PRO data lags ~30
  * days, this is a slow-moving modifier weighted toward longer horizons — applied
- * almost fully at 3 months, only lightly at 2 weeks.
+ * almost fully at 3 months, only lightly at 2 weeks. MVRV is period-matched: the
+ * 30-day metric drives short horizons, the 180-day metric the 3-month column.
  */
 export interface ContextModifier {
   /** Multiplier on projected volatility (range width). 1 = no change. */
   volMultiplier: number;
-  /** Fractional shift of the range center. 0 = no change. */
-  centerBias: number;
+  /** Period-bound MVRV ratios (centered at 1.0 = cost basis). */
+  mvrv30: number;
+  mvrv180: number;
+  /** Weighted-sentiment balance (drives a small center tilt). */
+  sentimentBalance: number;
+}
+
+const clampN = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+/** Period-matched center bias (fractional) for a given horizon, before horizon weighting. */
+function rawCenterBias(ctx: ContextModifier, days: number): number {
+  // Interpolate MVRV from the 30-day metric (short) to the 180-day metric (~3m).
+  const t = clampN((days - 30) / (180 - 30), 0, 1);
+  const mvrv = ctx.mvrv30 * (1 - t) + ctx.mvrv180 * t;
+  // Mean-reversion: above cost basis (>1) nudges the center down; below nudges up.
+  const mvrvPart = -0.04 * Math.tanh((mvrv - 1.0) / 0.3);
+  const sentimentPart = 0.02 * Math.tanh(ctx.sentimentBalance / 200);
+  return clampN(sentimentPart + mvrvPart, -0.06, 0.06);
 }
 
 export interface BuildGridOptions {
@@ -136,7 +153,7 @@ export function buildRangeGrid(prices: number[], options: BuildGridOptions = {})
     // Horizon-weighted context: light at 2w, full at 3m (Santiment lags ~30 days).
     const w = horizonWeight(horizon.days);
     const volMult = contextModifier ? 1 + (contextModifier.volMultiplier - 1) * w : 1;
-    const centerBias = contextModifier ? contextModifier.centerBias * w : 0;
+    const centerBias = contextModifier ? rawCenterBias(contextModifier, horizon.days) * w : 0;
 
     const projVol =
       projectedVolatility(currentDailyVol, longRunDailyVol, persistence, horizon.days) * volMult;

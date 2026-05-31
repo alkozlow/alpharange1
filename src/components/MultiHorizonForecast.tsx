@@ -283,12 +283,17 @@ function SantimentPanel({ ctx }: { ctx: SantimentContext | null }) {
   const biasNear = contextCenterBias(mod, 14) * 100;
   const biasFar = contextCenterBias(mod, 90) * 100;
 
+  const mvrvSourceLabel = ctx.mvrvSource === 'bitcoin-data' ? 'bitcoin-data.com (current)' : 'Santiment (lagged ~30d)';
+
   return (
     <Card className="p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="font-semibold">Santiment context</h2>
         <Badge variant="secondary">social: {c.socialTrend}</Badge>
         <Badge variant="secondary">valuation: {c.valuation}</Badge>
+        <Badge variant="outline" className="text-xs">
+          MVRV: {mvrvSourceLabel}
+        </Badge>
         <span className="text-xs text-muted-foreground">as of {ctx.asOf}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">

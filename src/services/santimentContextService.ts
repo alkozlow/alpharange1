@@ -27,6 +27,8 @@ export interface SantimentContext {
   reason?: string;
   /** Window end the metrics are as-of (PRO tier lags ~30 days). */
   asOf?: string;
+  /** Source of MVRV data: 'bitcoin-data' (current, BTC only) or 'santiment' (lagged). */
+  mvrvSource?: 'bitcoin-data' | 'santiment';
   context?: SantimentContextDetail;
 }
 

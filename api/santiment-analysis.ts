@@ -47,9 +47,12 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const apiKey = process.env.SANTIMENT_API_KEY;
+  // Accept the canonical name plus the common "sentiment" misspelling.
+  const apiKey = process.env.SANTIMENT_API_KEY || process.env.SENTIMENT_API_KEY;
   if (!apiKey) {
-    res.status(200).json(unavailable('SANTIMENT_API_KEY not configured'));
+    res.status(200).json(
+      unavailable('API key not configured (looked for SANTIMENT_API_KEY / SENTIMENT_API_KEY)')
+    );
     return;
   }
 
